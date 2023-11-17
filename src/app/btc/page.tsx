@@ -5,7 +5,7 @@ import {useEffect, useRef, useState} from "react";
 import * as echarts from 'echarts';
 
 const calculateMovingAverage = (data: number[], period: number) => {
-  const movingAverages = [];
+  const movingAverages: (null | number) [] = [];
   for (let i = 0; i < data.length; i++) {
     if (i < period) {
       movingAverages.push(null);
@@ -19,16 +19,37 @@ const calculateMovingAverage = (data: number[], period: number) => {
   return movingAverages;
 }
 
-const PERIOD = 20
+const PERIOD = 21
 
 export default function Home() {
   const chartRef = useRef<any>(null)
   const chartInstance = useRef<any>(null)
   const [kline, setKline] = useState([])
+  const [tradeData, setTradeData] = useState<any[]>([])
 
   useEffect(() => {
     getKline()
   }, []);
+
+
+  useEffect(() => {
+    if (tradeData.length) {
+      console.log(tradeData[tradeData.length - 1]);
+    }
+  }, [tradeData]);
+
+
+  const makeTrading = (data: any) => {
+    return data.map((item: any) => {
+      if (Number(item.price) < item.bt) {
+        console.log(item.time, item.price)
+        return {...item, action: "buy"}
+      } else {
+        return item
+      }
+    })
+  }
+
 
   useEffect(() => {
     if (kline.length > 0) {
@@ -69,10 +90,13 @@ export default function Home() {
         ],
         series: [],
       };
-      defaultChart.xAxis.data = kline.map(item => {
+
+      const timeData = kline.map(item => {
         const date = new Date(item[0])
         return `${date.getFullYear()}-${date.getMonth() + 1}-${date.getDate()}`
-      }).slice(PERIOD)
+      }).slice(PERIOD - 1)
+
+      defaultChart.xAxis.data = timeData
 
 
       const ma20 = calculateMovingAverage(kline.map(item => Number(item[4])), PERIOD)?.slice(PERIOD)
@@ -88,11 +112,43 @@ export default function Home() {
         }, 0) / PERIOD)
       })
 
+      // console.log(std.length)
+      const renderData = kline.map(item => [item[1], item[4], item[2], item[3]]).slice(PERIOD - 1)
+      const upLine = ma20.map((item, index) => item as number + 2 * std[index])
+      const btLine = ma20.map((item, index) => item as number - 2 * std[index])
+
+      const tradeData = renderData.map((xxx, index) => {
+        return {
+          time: timeData[index],
+          price: Number(xxx[1]),
+          up: upLine[index],
+          bt: btLine[index]
+        }
+      })
+
+      setTradeData(tradeData)
+
+
+      const actionList = makeTrading(tradeData)
+      console.log(66666666, actionList);
 
       defaultChart.series = [
         {
           type: 'candlestick',
-          data: kline.map(item => [item[1], item[4], item[2], item[3]]).slice(20)
+          data: renderData,
+          markPoint: {
+            data: actionList.map((item: any, index: number) => {
+              if (item.action) {
+                return {
+                  coord: [index, item.price * 0.8],
+                  symbol: "arrow",
+                  symbolSize: 30
+                }
+              } else {
+                return null
+              }
+            }).filter((item) => !!item)
+          },
         },
         {
           type: "line",
@@ -101,12 +157,12 @@ export default function Home() {
         },
         {
           type: "line",
-          data: ma20.map((item, index) => item as number + 2 * std[index]),
+          data: upLine,
           symbol: "none"
         },
         {
           type: "line",
-          data: ma20.map((item, index) => item as number - 2 * std[index]),
+          data: btLine,
           symbol: "none"
         }
       ]
@@ -124,7 +180,7 @@ export default function Home() {
 
   return (
     <main className={styles.main}>
-      <div ref={chartRef} style={{height: 600, width: "100%"}}/>
+      <div ref={chartRef} style={{height: 700, width: "100%"}}/>
     </main>
   )
 }
