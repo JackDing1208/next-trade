@@ -5,10 +5,18 @@ import {useEffect, useRef, useState} from "react";
 import * as echarts from 'echarts';
 
 
-const PERIOD = 21
+const MA = 21
 const BOOK_SIZE = 20000
+const PERIOD = 1000
 const SLIP = 1
-const SYMBOL = "ETH"
+const SYMBOL = "BTC"
+// const SYMBOL = "ETH"
+// const SYMBOL = "BNB"
+// const SYMBOL = "XRP"
+// const SYMBOL = "SOL"
+// const SYMBOL = "ADA"
+// const SYMBOL = "DOT"
+// const SYMBOL = "DOGE"
 
 const calculateMovingAverage = (data: number[], period: number) => {
   const movingAverages: (null | number) [] = [];
@@ -56,6 +64,12 @@ export default function Home() {
     var option = {
       title: {
         text: `PNL(${BOOK_SIZE} X5)`
+      },
+      tooltip: {
+        trigger: 'axis',
+        position: function (pt: any) {
+          return [pt[0], '10%'];
+        },
       },
       xAxis: {type: 'category', gridIndex: 0, data: pnl.map(item => item.time)},
       yAxis: {type: 'value', gridIndex: 0},
@@ -107,9 +121,9 @@ export default function Home() {
         }
       }
 
-      if ((item.price) < item.up) {
+      if ((item.price) < item.ma) {
         const next = data[index - 1]
-        if (next && next.price > next.up) {
+        if (next && next.price > next.ma) {
           if (currentPosition !== 0) {
             currentPosition = 0
             positionList.push({time: item.time, price: item.price, vol: currentPosition})
@@ -169,24 +183,24 @@ export default function Home() {
       const timeData = kline.map(item => {
         const date = new Date(item[0])
         return `${date.getFullYear()}-${date.getMonth() + 1}-${date.getDate()}`
-      }).slice(PERIOD - 1)
+      }).slice(MA - 1)
 
       defaultChart.xAxis.data = timeData
-      const ma20 = calculateMovingAverage(kline.map(item => Number(item[4])), PERIOD)?.slice(PERIOD)
+      const ma20 = calculateMovingAverage(kline.map(item => Number(item[4])), MA)?.slice(MA)
 
       console.log(ma20?.length);
 
       const std = ma20.map((item, index) => {
-        return Math.sqrt(kline.slice(index, index + PERIOD).reduce((acc: number, current: any, index: number) => {
+        return Math.sqrt(kline.slice(index, index + MA).reduce((acc: number, current: any, index: number) => {
 
           const diff = Number(current[4]) - (item as number)
           const value = diff * diff
           return acc + value
-        }, 0) / PERIOD)
+        }, 0) / MA)
       })
 
       // console.log(std.length)
-      const renderData = kline.map(item => [item[1], item[4], item[2], item[3]]).slice(PERIOD - 1)
+      const renderData = kline.map(item => [item[1], item[4], item[2], item[3]]).slice(MA - 1)
       const upLine = ma20.map((item, index) => item as number + 2 * std[index])
       const btLine = ma20.map((item, index) => item as number - 2 * std[index])
 
@@ -194,6 +208,8 @@ export default function Home() {
         return {
           time: timeData[index],
           price: Number(xxx[1]),
+          low: Number(xxx[2]),
+          ma: ma20[index],
           up: upLine[index],
           bt: btLine[index]
         }
@@ -228,7 +244,7 @@ export default function Home() {
                   coord: [index, item.price * 1.2],
                   symbol: "arrow",
                   symbolSize: 24,
-                  symbolRotate:180,
+                  symbolRotate: 180,
                   label: {
                     formatter: "S",
                   },
@@ -264,7 +280,7 @@ export default function Home() {
   }, [kline]);
 
   const getKline = async () => {
-    const data = await fetch(`https://api.binance.com/api/v3/klines?symbol=${SYMBOL}USDT&interval=1d&limit=1000`).then(res => res.json())
+    const data = await fetch(`https://api.binance.com/api/v3/klines?symbol=${SYMBOL}USDT&interval=1d&limit=${PERIOD}`).then(res => res.json())
     console.log(data.length);
     setKline(data)
   }
