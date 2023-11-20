@@ -4,6 +4,12 @@ import styles from './page.module.scss'
 import {useEffect, useRef, useState} from "react";
 import * as echarts from 'echarts';
 
+
+const PERIOD = 21
+const BOOK_SIZE = 20000
+const SLIP = 1
+const SYMBOL = "ETH"
+
 const calculateMovingAverage = (data: number[], period: number) => {
   const movingAverages: (null | number) [] = [];
   for (let i = 0; i < data.length; i++) {
@@ -19,17 +25,25 @@ const calculateMovingAverage = (data: number[], period: number) => {
   return movingAverages;
 }
 
-const PERIOD = 21
 
 export default function Home() {
-  const chartRef = useRef<any>(null)
-  const chartInstance = useRef<any>(null)
+  const chartRef1 = useRef<any>(null)
+  const chartRef2 = useRef<any>(null)
+  const chartInstance1 = useRef<any>(null)
+  const chartInstance2 = useRef<any>(null)
   const [kline, setKline] = useState([])
   const [tradeData, setTradeData] = useState<any[]>([])
+  const [position, setPosition] = useState<any[]>([])
+  const [pnl, setPnl] = useState<any[]>([])
+
 
   useEffect(() => {
     getKline()
   }, []);
+
+  useEffect(() => {
+    calculatePNL()
+  }, [position]);
 
 
   useEffect(() => {
@@ -38,25 +52,86 @@ export default function Home() {
     }
   }, [tradeData]);
 
+  useEffect(() => {
+    var option = {
+      title: {
+        text: `PNL(${BOOK_SIZE} X5)`
+      },
+      xAxis: {type: 'category', gridIndex: 0, data: pnl.map(item => item.time)},
+      yAxis: {type: 'value', gridIndex: 0},
+      dataZoom: {type: 'slider'},
+      series: [
+        {type: 'line', symbol: "none", data: pnl.map(item => item.total)},
+      ]
+    };
+    chartInstance2.current = echarts.init(chartRef2.current);
+    chartInstance2.current.setOption(option);
+  }, [pnl]);
 
-  const makeTrading = (data: any) => {
-    return data.map((item: any) => {
-      if (Number(item.price) < item.bt) {
-        console.log(item.time, item.price)
-        return {...item, action: "buy"}
+
+  const calculatePNL = () => {
+    console.log(position)
+    const pnl = position.map((item, index) => {
+      const prev = position[index - 1] || {}
+      console.log(prev)
+      if (prev.vol) {
+        return {time: item.time, pnl: prev.vol * (item.price - prev.price)}
       } else {
-        return item
+        return {time: item.time, pnl: 0}
       }
     })
+
+    let total = 0
+    const totalPnl = pnl.map((item) => {
+      total += item.pnl
+      return {...item, total}
+    })
+    console.log(totalPnl)
+    setPnl(totalPnl)
+  }
+
+  const makeTrading = (data: any) => {
+    const positionList: any[] = []
+    const total = BOOK_SIZE * 5
+    let currentPosition = 0
+
+    const result = data.map((item: any, index: number) => {
+      if ((item.price) > item.bt) {
+        const next = data[index - 1]
+        if (next && next.price < next.bt) {
+          if (currentPosition === 0) {
+            currentPosition = total / item.price
+            positionList.push({time: item.time, price: item.price, vol: currentPosition})
+            return {...item, action: "BUY"}
+          }
+        }
+      }
+
+      if ((item.price) < item.up) {
+        const next = data[index - 1]
+        if (next && next.price > next.up) {
+          if (currentPosition !== 0) {
+            currentPosition = 0
+            positionList.push({time: item.time, price: item.price, vol: currentPosition})
+            return {...item, action: "SELL"}
+          }
+        }
+      }
+
+      positionList.push({time: item.time, price: item.price, vol: currentPosition})
+      return item
+    })
+
+    setPosition(positionList)
+    return result
   }
 
 
   useEffect(() => {
     if (kline.length > 0) {
-      chartInstance.current = echarts.init(chartRef.current);
       const defaultChart: any = {
-        legend: {
-          name: [],
+        title: {
+          text: `Kline-${SYMBOL}`
         },
         tooltip: {
           trigger: 'axis',
@@ -71,10 +146,10 @@ export default function Home() {
         yAxis: {
           type: 'value',
           min: function (value: any) {
-            return Math.floor((value.min - (value.max - value.min) * 0.1) / 5000) * 5000;
+            return Math.floor((value.min * 0.9));
           },
           max: function (value: any) {
-            return Math.ceil((value.max + (value.max - value.min) * 0.1) / 5000) * 5000;
+            return Math.ceil((value.max * 1.1));
           },
         },
         dataZoom: [
@@ -97,8 +172,6 @@ export default function Home() {
       }).slice(PERIOD - 1)
 
       defaultChart.xAxis.data = timeData
-
-
       const ma20 = calculateMovingAverage(kline.map(item => Number(item[4])), PERIOD)?.slice(PERIOD)
 
       console.log(ma20?.length);
@@ -130,7 +203,7 @@ export default function Home() {
 
 
       const actionList = makeTrading(tradeData)
-      console.log(66666666, actionList);
+      // console.log(66666666, actionList);
 
       defaultChart.series = [
         {
@@ -138,11 +211,30 @@ export default function Home() {
           data: renderData,
           markPoint: {
             data: actionList.map((item: any, index: number) => {
-              if (item.action) {
+              if (item.action === "BUY") {
                 return {
                   coord: [index, item.price * 0.8],
                   symbol: "arrow",
-                  symbolSize: 30
+                  symbolSize: 24,
+                  label: {
+                    formatter: "B",
+                  },
+                  itemStyle: {
+                    color: "red"
+                  }
+                }
+              } else if (item.action === "SELL") {
+                return {
+                  coord: [index, item.price * 1.2],
+                  symbol: "arrow",
+                  symbolSize: 24,
+                  symbolRotate:180,
+                  label: {
+                    formatter: "S",
+                  },
+                  itemStyle: {
+                    color: "green"
+                  }
                 }
               } else {
                 return null
@@ -166,13 +258,13 @@ export default function Home() {
           symbol: "none"
         }
       ]
-
-      chartInstance.current.setOption(defaultChart);
+      chartInstance1.current = echarts.init(chartRef1.current);
+      chartInstance1.current.setOption(defaultChart);
     }
   }, [kline]);
 
-  const getKline = async (symbol: string = "BTC") => {
-    const data = await fetch(`https://api.binance.com/api/v3/klines?symbol=${symbol}USDT&interval=1d`).then(res => res.json())
+  const getKline = async () => {
+    const data = await fetch(`https://api.binance.com/api/v3/klines?symbol=${SYMBOL}USDT&interval=1d&limit=1000`).then(res => res.json())
     console.log(data.length);
     setKline(data)
   }
@@ -180,7 +272,8 @@ export default function Home() {
 
   return (
     <main className={styles.main}>
-      <div ref={chartRef} style={{height: 700, width: "100%"}}/>
+      <div ref={chartRef1} style={{height: 500, width: "100%"}}/>
+      <div ref={chartRef2} style={{height: 400, width: "100%"}}/>
     </main>
   )
 }
