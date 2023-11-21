@@ -9,8 +9,9 @@ const MA = 21
 const BOOK_SIZE = 20000
 const PERIOD = 1000
 const SLIP = 1
-const SYMBOL = "BTC"
-// const SYMBOL = "ETH"
+const LEVERAGE = 5
+// const SYMBOL = "BTC"
+const SYMBOL = "ETH"
 // const SYMBOL = "BNB"
 // const SYMBOL = "XRP"
 // const SYMBOL = "SOL"
@@ -63,7 +64,7 @@ export default function Home() {
   useEffect(() => {
     var option = {
       title: {
-        text: `PNL(${BOOK_SIZE} X5)`
+        text: `PNL(${BOOK_SIZE} X${LEVERAGE})`
       },
       tooltip: {
         trigger: 'axis',
@@ -87,7 +88,7 @@ export default function Home() {
     console.log(position)
     const pnl = position.map((item, index) => {
       const prev = position[index - 1] || {}
-      console.log(prev)
+      // console.log(prev)
       if (prev.vol) {
         return {time: item.time, pnl: prev.vol * (item.price - prev.price)}
       } else {
@@ -100,39 +101,55 @@ export default function Home() {
       total += item.pnl
       return {...item, total}
     })
-    console.log(totalPnl)
+    // console.log(totalPnl)
     setPnl(totalPnl)
   }
 
   const makeTrading = (data: any) => {
     const positionList: any[] = []
-    const total = BOOK_SIZE * 5
+    const total = BOOK_SIZE * LEVERAGE
     let currentPosition = 0
 
     const result = data.map((item: any, index: number) => {
-      if ((item.price) > item.bt) {
-        const next = data[index - 1]
-        if (next && next.price < next.bt) {
+      if ((item.close) > item.bt) {
+        const prev = data[index - 1]
+        if (prev && prev.low < prev.bt) {
+          console.log(prev)
           if (currentPosition === 0) {
-            currentPosition = total / item.price
-            positionList.push({time: item.time, price: item.price, vol: currentPosition})
+            currentPosition = total / item.close
+            positionList.push({time: item.time, price: item.close, vol: currentPosition})
             return {...item, action: "BUY"}
           }
         }
       }
 
-      if ((item.price) < item.ma) {
-        const next = data[index - 1]
-        if (next && next.price > next.ma) {
+      if ((item.close) < item.ma) {
+        const prev = data[index - 1]
+        if (prev && prev.close > prev.ma) {
           if (currentPosition !== 0) {
             currentPosition = 0
-            positionList.push({time: item.time, price: item.price, vol: currentPosition})
+            positionList.push({time: item.time, price: item.close, vol: currentPosition})
             return {...item, action: "SELL"}
           }
         }
       }
 
-      positionList.push({time: item.time, price: item.price, vol: currentPosition})
+
+      //止损
+      if ((item.low) < item.bt) {
+        const prev = data[index - 1]
+        if (prev && prev.low < prev.bt) {
+          if (currentPosition !== 0) {
+            currentPosition = 0
+            positionList.push({time: item.time, price: item.close, vol: currentPosition})
+            return {...item, action: "SELL"}
+          }
+        }
+      }
+
+
+
+      positionList.push({time: item.time, price: item.close, vol: currentPosition})
       return item
     })
 
@@ -200,15 +217,17 @@ export default function Home() {
       })
 
       // console.log(std.length)
-      const renderData = kline.map(item => [item[1], item[4], item[2], item[3]]).slice(MA - 1)
+      const renderData = kline.map(item => [item[1], item[4], item[3], item[2]]).slice(MA - 1)
       const upLine = ma20.map((item, index) => item as number + 2 * std[index])
       const btLine = ma20.map((item, index) => item as number - 2 * std[index])
 
       const tradeData = renderData.map((xxx, index) => {
         return {
           time: timeData[index],
-          price: Number(xxx[1]),
+          open: Number(xxx[0]),
+          close: Number(xxx[1]),
           low: Number(xxx[2]),
+          high: Number(xxx[3]),
           ma: ma20[index],
           up: upLine[index],
           bt: btLine[index]
@@ -229,7 +248,7 @@ export default function Home() {
             data: actionList.map((item: any, index: number) => {
               if (item.action === "BUY") {
                 return {
-                  coord: [index, item.price * 0.8],
+                  coord: [index, item.close * 0.8],
                   symbol: "arrow",
                   symbolSize: 24,
                   label: {
@@ -241,7 +260,7 @@ export default function Home() {
                 }
               } else if (item.action === "SELL") {
                 return {
-                  coord: [index, item.price * 1.2],
+                  coord: [index, item.close * 1.2],
                   symbol: "arrow",
                   symbolSize: 24,
                   symbolRotate: 180,
